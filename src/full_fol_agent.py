@@ -1,176 +1,29 @@
-from collections import deque
-from z3 import Bool, Bools, Or, And, Not, Solver, unsat
-from hazardous_warehouse_env import (
-    HazardousWarehouseEnv,
-    Action,
-    Direction,
-    Percept
-)
-
-### Task 1
-P, Q = Bools('P Q')
-solver = Solver()
-solver.add(P == Q)    # Biconditional --- native, no CNF needed
-solver.add(P)
-
 """
-print(solver.check())  # sat
-print(solver.model())   # [Q = True, P = True]
-"""
-
-def z3_entails(solver, query):
-    """Check whether the solver's current assertions entail query."""
-    solver.push()
-    solver.add(Not(query))
-    result = solver.check() == unsat
-    solver.pop()
-    return result
-
-z3_entails(solver, Q) # True, as expected.
-
-### Task 2
-def damaged(x, y):
-    return Bool(f'D_{x}_{y}')
-def forklift_at(x, y):
-    return Bool(f'F_{x}_{y}')
-def creaking_at(x, y):
-    return Bool(f'C_{x}_{y}')
-def rumbling_at(x, y):
-    return Bool(f'R_{x}_{y}')
-def safe(x, y):
-    return Bool(f'OK_{x}_{y}')
-
-def get_adjacent(x, y, width=4, height=4):
-    result = []
-    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        nx, ny = x + dx, y + dy
-        if 1 <= nx <= width and 1 <= ny <= height:
-            result.append((nx, ny))
-    return result
-
-# Creaking
-adj = get_adjacent(2, 1)  # [(1,1), (3,1), (2,2)]
-solver.add(creaking_at(2, 1) == Or([damaged(a, b) for a, b in adj]))
-# C_2_1 == Or(D_1_1, D_3_1, D_2_2)
-
-# Rumbling
-solver.add(rumbling_at(2, 1) == Or([forklift_at(a, b) for a, b in adj]))
-
-# Safe
-solver.add(safe(2, 1) == And(Not(damaged(2, 1)), Not(forklift_at(2, 1))))
-
-# Warehouse Knowledge Base
-def build_warehouse_kb(width=4, height=4):
-    solver = Solver()
-    # The starting square is safe.
-    solver.add(Not(damaged(1, 1)))
-    solver.add(Not(forklift_at(1, 1)))
-    for x in range(1, width + 1):
-        for y in range(1, height + 1):
-            adj = get_adjacent(x, y, width, height)
-            # Creaking iff damaged adjacent
-            solver.add(creaking_at(x, y) == Or([damaged(a, b) for a, b in adj]))
-            # Rumbling iff forklift adjacent
-            solver.add(rumbling_at(x, y) == Or([forklift_at(a, b) for a, b in adj]))
-            # Safety rule
-            solver.add(
-                safe(x, y) == And(Not(damaged(x, y)), Not(forklift_at(x, y)))
-            )
-    return solver
-
-solver = build_warehouse_kb()
-
-solver.check() # Returns sat
-
-"""
-
-### Task 3
-
-# Using tell_percept function
-def tell_percepts(solver, percept, x, y):
-    if percept.creaking:
-        solver.add(creaking_at(x, y))
-    else:
-        solver.add(Not(creaking_at(x, y)))
-    if percept.rumbling:
-        solver.add(rumbling_at(x, y))
-    else:
-        solver.add(Not(rumbling_at(x, y)))
-
-z3_entails(solver, safe(2, 1))        # True if solver entails OK_2_1
-z3_entails(solver, Not(safe(3, 1)))   # True if solver entails ~OK_3_1
-
-tell_percepts(solver, Percept(creaking=False, rumbling=False,
-                              beacon=False, bump=False, beep=False), 1, 1)
-# ASK about adjacent squares
-print(z3_entails(solver, safe(2, 1)))  # True
-print(z3_entails(solver, safe(1, 2)))  # True
-
-# Creaking and no rumbling at (2, 1)
-tell_percepts(solver, Percept(creaking=True, rumbling=False,
-                              beacon=False, bump=False, beep=False), 2, 1)
-print(z3_entails(solver, safe(3, 1)))        # False (unknown)
-print(z3_entails(solver, Not(safe(3, 1))))   # False (unknown)
-print(z3_entails(solver, safe(2, 2)))        # False (unknown)
-
-# All are false because the solver can't determine for sure whether it is safe or not.
-# It could be damaged at either location.
-
-# Rumbling but no creaking at (1, 2)
-tell_percepts(solver, Percept(creaking=False, rumbling=True,
-                              beacon=False, bump=False, beep=False), 1, 2)
-print(z3_entails(solver, safe(2, 2)))        # True!
-print(z3_entails(solver, Not(safe(3, 1))))   # True!
-print(z3_entails(solver, Not(safe(1, 3))))   # True!
-
-"""
-
-### Task 4
-
-# Path planning function w/ BFS
-def plan_path(start, goal_set, known_safe, width, height):
-    """BFS from start to any cell in goal_set, moving only through known_safe."""
-    queue = deque([(start, [start])])
-    seen = {start}
-    while queue:
-        (cx, cy), path = queue.popleft()
-        if (cx, cy) in goal_set:
-            return path
-        for nx, ny in get_adjacent(cx, cy, width, height):
-            if (nx, ny) not in seen and (nx, ny) in known_safe:
-                seen.add((nx, ny))
-                queue.append(((nx, ny), path + [(nx, ny)]))
-    return None  # No path found
-
-# Paths to actions function
-def turns_between(current, target):
-    """Return the shortest sequence of turn actions from current to target direction."""
-    if current == target:
-        return []
-    # Count steps in each direction and choose the shorter one.
-    ...
-
-
-
-
-# Full implementation of the kb agent:
-
-"""
-Knowledge-Based Agent for the Hazardous Warehouse (Propositional Z3)
-Uses Z3's SMT solver with grounded propositional variables to reason
-about safety and navigate the warehouse to retrieve the package.
-This agent implements the TELL/ASK loop:
+FOL Agent for the Hazardous Warehouse (Z3 Version)
+Uses Z3's SMT solver with quantified first-order logic to reason about
+safety and navigate the warehouse to retrieve the package.
+This agent implements the same TELL/ASK loop as warehouse_kb_agent.py
+but replaces the DPLL-based PropKB with Z3's Solver and expresses the
+physics rules as quantified FOL sentences:
   1. TELL the solver about percepts (solver.add)
   2. ASK via entailment check (push/Not(query)/check/pop)
   3. Plan a path through safe squares toward the goal
   4. Execute actions and repeat
-The knowledge base encodes the physics of the warehouse using one Bool
-variable per square per predicate:
-  - Creaking at (x,y) iff damaged floor in an adjacent square
-  - Rumbling at (x,y) iff forklift in an adjacent square
-  - A square is safe iff it has no damaged floor and no forklift
+The physics rules are expressed as single universally quantified sentences:
+  - ForAll L, Creaking(L) <=> Exists L', Adjacent(L,L') & Damaged(L')
+  - ForAll L, Rumbling(L) <=> Exists L', Adjacent(L,L') & Forklift(L')
+  - ForAll L, Safe(L) <=> ~Damaged(L) & ~Forklift(L)
 """
-
+from collections import deque
+from z3 import (
+    Or, And, Not, Solver, unsat,
+    DeclareSort, Function, BoolSort, Const, ForAll, Exists, Distinct,
+)
+from hazardous_warehouse_env import (
+    HazardousWarehouseEnv,
+    Action,
+    Direction,
+)
 # ---------------------------------------------------------------------------
 # Z3 Entailment Check
 # ---------------------------------------------------------------------------
@@ -187,24 +40,6 @@ def z3_entails(solver, query):
     solver.pop()
     return result
 # ---------------------------------------------------------------------------
-# Propositional Variable Helpers
-# ---------------------------------------------------------------------------
-def damaged(x, y):
-    """Z3 Bool variable: damaged floor at (x, y)."""
-    return Bool(f'D_{x}_{y}')
-def forklift_at(x, y):
-    """Z3 Bool variable: forklift at (x, y)."""
-    return Bool(f'F_{x}_{y}')
-def creaking_at(x, y):
-    """Z3 Bool variable: creaking perceived at (x, y)."""
-    return Bool(f'C_{x}_{y}')
-def rumbling_at(x, y):
-    """Z3 Bool variable: rumbling perceived at (x, y)."""
-    return Bool(f'R_{x}_{y}')
-def safe(x, y):
-    """Z3 Bool variable: square (x, y) is safe to enter."""
-    return Bool(f'OK_{x}_{y}')
-# ---------------------------------------------------------------------------
 # Adjacency
 # ---------------------------------------------------------------------------
 def get_adjacent(x, y, width=4, height=4):
@@ -216,39 +51,84 @@ def get_adjacent(x, y, width=4, height=4):
             result.append((nx, ny))
     return result
 # ---------------------------------------------------------------------------
-# Knowledge-Base Construction
+# Knowledge-Base Construction (Quantified FOL Encoding)
 # ---------------------------------------------------------------------------
-def build_warehouse_kb(width=4, height=4):
-    """Build a Z3 Solver populated with the physics of the warehouse.
-    The solver contains three kinds of constraints for every square (x, y):
-    1. Creaking biconditional
-       C_x_y == Or(D_a1_b1, D_a2_b2, ...)
-       where (a_i, b_i) are the squares adjacent to (x, y).
-    2. Rumbling biconditional
-       R_x_y == Or(F_a1_b1, F_a2_b2, ...)
-    3. Safety biconditional
-       OK_x_y == And(Not(D_x_y), Not(F_x_y))
-    Z3's native == operator handles biconditionals directly ---
-    no manual CNF conversion is needed.
-    It also encodes the initial knowledge that the starting square (1, 1)
-    has no damaged floor and no forklift.
+def build_warehouse_kb_fol(width=4, height=4):
+    """Build a Z3 Solver using quantified first-order logic.
+    The physics rules are expressed as single quantified sentences ---
+    one per rule, independent of the grid size:
+        ForAll L, Creaking(L) == Exists L', Adjacent(L,L') & Damaged(L')
+        ForAll L, Rumbling(L) == Exists L', Adjacent(L,L') & Forklift(L')
+        ForAll L, Safe(L) == And(Not(Damaged(L)), Not(Forklift(L)))
+    Structural facts (adjacency, domain closure) require enumeration over
+    grid squares, but these encode the grid topology, not the physics.
+    Returns (solver, loc, predicates) where:
+      - solver: Z3 Solver with all constraints
+      - loc: dict mapping (x,y) to Z3 Location constants
+      - predicates: dict mapping names to Z3 Function objects
     """
-    solver = Solver()
-    # The starting square is safe.
-    solver.add(Not(damaged(1, 1)))
-    solver.add(Not(forklift_at(1, 1)))
+    Location = DeclareSort('Location')
+    # Uninterpreted functions (predicates)
+    Damaged_fn = Function('Damaged', Location, BoolSort())
+    Forklift_fn = Function('Forklift', Location, BoolSort())
+    Creaking_fn = Function('Creaking', Location, BoolSort())
+    Rumbling_fn = Function('Rumbling', Location, BoolSort())
+    Safe_fn = Function('Safe', Location, BoolSort())
+    Adjacent_fn = Function('Adjacent', Location, Location, BoolSort())
+    # Location constants --- one per grid square
+    loc = {}
     for x in range(1, width + 1):
         for y in range(1, height + 1):
-            adj = get_adjacent(x, y, width, height)
-            # --- Creaking rule ---
-            solver.add(creaking_at(x, y) == Or([damaged(a, b) for a, b in adj]))
-            # --- Rumbling rule ---
-            solver.add(rumbling_at(x, y) == Or([forklift_at(a, b) for a, b in adj]))
-            # --- Safety rule ---
-            solver.add(
-                safe(x, y) == And(Not(damaged(x, y)), Not(forklift_at(x, y)))
-            )
-    return solver
+            loc[(x, y)] = Const(f'L_{x}_{y}', Location)
+    solver = Solver()
+    # --- Domain closure: every Location is one of our grid constants ---
+    # Without this, ForAll could range over phantom locations that absorb
+    # damage/forklift blame, breaking process-of-elimination reasoning.
+    L = Const('L', Location)
+    solver.add(ForAll(L,
+        Or([L == loc[(x, y)]
+            for x in range(1, width + 1)
+            for y in range(1, height + 1)])
+    ))
+    # All location constants are distinct
+    solver.add(Distinct(list(loc.values())))
+    # --- Adjacency facts (closed-world) ---
+    # Every pair of grid squares is either adjacent or not.
+    for x in range(1, width + 1):
+        for y in range(1, height + 1):
+            adj_set = set(get_adjacent(x, y, width, height))
+            for x2 in range(1, width + 1):
+                for y2 in range(1, height + 1):
+                    if (x2, y2) in adj_set:
+                        solver.add(Adjacent_fn(loc[(x, y)], loc[(x2, y2)]))
+                    else:
+                        solver.add(Not(Adjacent_fn(loc[(x, y)], loc[(x2, y2)])))
+    # --- Quantified physics rules ---
+    # One sentence each --- no loop over grid squares.
+    Lp = Const('Lp', Location)
+    # Creaking rule
+    solver.add(ForAll(L,
+        Creaking_fn(L) == Exists(Lp, And(Adjacent_fn(L, Lp), Damaged_fn(Lp)))
+    ))
+    # Rumbling rule
+    solver.add(ForAll(L,
+        Rumbling_fn(L) == Exists(Lp, And(Adjacent_fn(L, Lp), Forklift_fn(Lp)))
+    ))
+    # Safety rule
+    solver.add(ForAll(L,
+        Safe_fn(L) == And(Not(Damaged_fn(L)), Not(Forklift_fn(L)))
+    ))
+    # --- Initial knowledge ---
+    solver.add(Safe_fn(loc[(1, 1)]))
+    predicates = {
+        'Creaking': Creaking_fn,
+        'Rumbling': Rumbling_fn,
+        'Safe': Safe_fn,
+        'Damaged': Damaged_fn,
+        'Forklift': Forklift_fn,
+        'Adjacent': Adjacent_fn,
+    }
+    return solver, loc, predicates
 # ---------------------------------------------------------------------------
 # Turning Helpers
 # ---------------------------------------------------------------------------
@@ -278,15 +158,14 @@ def delta_to_direction(dx, dy):
         (-1, 0): Direction.WEST,
     }[(dx, dy)]
 # ---------------------------------------------------------------------------
-# Knowledge-Based Agent
+# Z3 FOL Knowledge-Based Agent
 # ---------------------------------------------------------------------------
-class WarehouseKBAgent:
-    """A knowledge-based agent for the Hazardous Warehouse.
-    The agent maintains:
-      - A Z3 Solver with physics rules and accumulated percepts
-      - Sets of known-safe and known-dangerous squares
-      - A queue of planned actions
-      - Its own position, direction, and inventory state
+class WarehouseZ3Agent:
+    """A knowledge-based agent using Z3 FOL for the Hazardous Warehouse.
+    Mirrors WarehouseKBAgent from warehouse_kb_agent.py with the same
+    decision strategy, path planning, and action conversion logic.
+    The difference is the reasoning engine: Z3 with quantified FOL
+    rules replaces the DPLL-based propositional WarehouseKB.
     Decision strategy (in priority order):
       1. If the beacon is detected, GRAB the package.
       2. If carrying the package, navigate to (1,1) and EXIT.
@@ -295,7 +174,9 @@ class WarehouseKBAgent:
     """
     def __init__(self, env):
         self.env = env
-        self.solver = build_warehouse_kb(env.width, env.height)
+        self.solver, self.loc, self.preds = build_warehouse_kb_fol(
+            env.width, env.height
+        )
         self.x = 1
         self.y = 1
         self.direction = Direction.EAST
@@ -307,27 +188,28 @@ class WarehouseKBAgent:
         self.step_count = 0
     # ----- Percepts ----------------------------------------------------------
     def tell_percepts(self, percept):
-        """Translate a Percept into Z3 assertions and TELL the solver."""
-        x, y = self.x, self.y
+        """Translate a Percept into Z3 FOL assertions and add to the solver."""
+        L = self.loc[(self.x, self.y)]
         if percept.creaking:
-            self.solver.add(creaking_at(x, y))
+            self.solver.add(self.preds['Creaking'](L))
         else:
-            self.solver.add(Not(creaking_at(x, y)))
+            self.solver.add(Not(self.preds['Creaking'](L)))
         if percept.rumbling:
-            self.solver.add(rumbling_at(x, y))
+            self.solver.add(self.preds['Rumbling'](L))
         else:
-            self.solver.add(Not(rumbling_at(x, y)))
+            self.solver.add(Not(self.preds['Rumbling'](L)))
     # ----- Safety queries ----------------------------------------------------
     def update_safety(self):
-        """ASK the solver about every square whose status is still unknown."""
+        """Check entailment for every square whose status is still unknown."""
         for x in range(1, self.env.width + 1):
             for y in range(1, self.env.height + 1):
                 pos = (x, y)
                 if pos in self.known_safe or pos in self.known_dangerous:
                     continue
-                if z3_entails(self.solver, safe(x, y)):
+                L = self.loc[pos]
+                if z3_entails(self.solver, self.preds['Safe'](L)):
                     self.known_safe.add(pos)
-                elif z3_entails(self.solver, Not(safe(x, y))):
+                elif z3_entails(self.solver, Not(self.preds['Safe'](L))):
                     self.known_dangerous.add(pos)
     # ----- Path planning -----------------------------------------------------
     def plan_path(self, start, goal_set):
@@ -461,7 +343,5 @@ if __name__ == "__main__":
     print("True state (hidden from the agent):")
     print(env.render(reveal=True))
     print()
-    agent = WarehouseKBAgent(env)
+    agent = WarehouseZ3Agent(env)
     agent.run(verbose=True)
-
-### Task 5 & 6 are in warehouse_kb_agent_test.py
