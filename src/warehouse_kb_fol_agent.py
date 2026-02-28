@@ -78,18 +78,20 @@ def build_warehouse_kb_fol(width=4, height=4):
         for y in range(1, height + 1):
             loc[(x, y)] = Const(f'L_{x}_{y}', Location)
     solver = Solver()
+
     # Domain closure
     L = Const('L', Location)
-    # solver.add(ForAll(L,
-    #     Or([L == loc[(x, y)]
-    #         for x in range(1, width + 1)
-    #         for y in range(1, height + 1)])
-    # ))
-    # solver.add(Distinct(list(loc.values())))
+    solver.add(ForAll(L,
+        Or([L == loc[(x, y)]
+            for x in range(1, width + 1)
+            for y in range(1, height + 1)])
+    ))
+    solver.add(Distinct(list(loc.values())))
+
     # Adjacency (closed-world)
     for x in range(1, width + 1):
         for y in range(1, height + 1):
-            adj_set = set(get_adjacent(x, y, width + 1, height+ 1))
+            adj_set = set(get_adjacent(x, y, width, height))
             for x2 in range(1, width + 1):
                 for y2 in range(1, height + 1):
                     if (x2, y2) in adj_set:
@@ -137,6 +139,7 @@ solver.add(Not(preds['Creaking'](loc[(2, 1)])))
 print(z3_entails(solver, preds['Safe'](loc[(2, 2)])))
 print(z3_entails(solver, preds['Safe'](loc[(3, 1)])))
 print(z3_entails(solver, preds['Safe'](loc[(1, 3)])))
+# print(z3_entails(solver, preds['Safe'](loc[(0, 2)])))
 
 # These match the conclusions that the propositional agent came to
 
@@ -166,9 +169,15 @@ The results are the same, but the system has issues with not
 being able to figure out where the forklift and damaged floor are.
 It is now considering locations outside of the bounds of the 
 warehouse. So, this time the false results are from uncertainty 
-rather than knowing the tiles are unsafe.
+rather than knowing the tiles are unsafe. It still knowas that 
+(2, 2) is safe since it only perceives creaking at (1, 2) and 
+rumbling at (2, 1).
 
-Actually, why does it know that (2, 2) is safe then? I removed the 
-closure axiom. It is probably something related to getting adjacent?
-I am going to increase the width to simulate what should happen.
+Removing domain closure to check (0, 2), a location outside of the
+warehouse, the solver returns False because it doesn't know whether
+rumbling is from (0, 2) or (1, 3).
+
+z3 is able to do this because of the general rules that it uses.
+Without domain closure, it considers any square that is adjacent, 
+even those outside of the warehouse. 
 """
