@@ -180,4 +180,9 @@ rumbling is from (0, 2) or (1, 3).
 z3 is able to do this because of the general rules that it uses.
 Without domain closure, it considers any square that is adjacent, 
 even those outside of the warehouse. 
+
+FROM CORRECTION:
+If you were to query if (1, 3) was damaged, the solver would not 
+return true. The solver is considering locations not in the grid,
+so it is unsure where the creaking at (1, 2) comes from.
 """

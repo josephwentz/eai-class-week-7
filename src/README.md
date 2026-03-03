@@ -309,3 +309,15 @@ Success: True
 Both implementations take the same amount of steps and receive the same reward
 
 # Task 6
+
+a. In propositional logic you needed a rule for each grid element.
+FOL logic only needs to write a rule once no matter the size of the grid.
+
+b. I felt that FOL encoding was a bit more readable. With fewer lines of 
+code and fewer rules, it was easier to get to the exact logic that it was 
+using.
+
+c. The role of domain closure was to prevent the agent and the logic rules 
+from considering locations outside of the environment. Propositional logic
+does not need the domain closure because it needs to write a rule for 
+each tile already.
